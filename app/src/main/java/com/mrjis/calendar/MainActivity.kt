@@ -8,9 +8,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -61,46 +63,58 @@ fun CalendarApp() {
         modifier = Modifier.fillMaxSize(),
         containerColor = MaterialTheme.colorScheme.background
     ) { innerPadding ->
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
                 .padding(horizontal = 16.dp)
         ) {
-            Spacer(modifier = Modifier.height(8.dp))
+            // Calendar content above the fixed footer
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.TopStart)
+                    .padding(bottom = 120.dp)
+            ) {
+                Spacer(modifier = Modifier.height(8.dp))
 
-            // ── Header: Month/Year label + navigation arrows ──────────────
-            CalendarHeader(
-                yearMonth = currentYearMonth,
-                onPreviousMonth = { currentYearMonth = currentYearMonth.minusMonths(1) },
-                onNextMonth = { currentYearMonth = currentYearMonth.plusMonths(1) },
-                onMonthClick = { showMonthPicker = true },
-                onYearClick = { showYearPicker = true }
-            )
+                CalendarHeader(
+                    yearMonth = currentYearMonth,
+                    onPreviousMonth = { currentYearMonth = currentYearMonth.minusMonths(1) },
+                    onNextMonth = { currentYearMonth = currentYearMonth.plusMonths(1) },
+                    onMonthClick = { showMonthPicker = true },
+                    onYearClick = { showYearPicker = true }
+                )
 
-            Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
-            // ── Weekday labels row ────────────────────────────────────────
-            WeekdayHeader()
+                WeekdayHeader()
 
-            Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(4.dp))
 
-            // ── Day grid ─────────────────────────────────────────────────
-            CalendarGrid(
-                yearMonth = currentYearMonth,
-                selectedDate = selectedDate,
-                today = today,
-                onDateSelected = { selectedDate = it }
-            )
+                CalendarGrid(
+                    yearMonth = currentYearMonth,
+                    selectedDate = selectedDate,
+                    today = today,
+                    onDateSelected = { selectedDate = it }
+                )
+            }
 
-            Spacer(modifier = Modifier.height(20.dp))
-
-            // ── Selected date info panel ──────────────────────────────────
-            SelectedDateCard(selectedDate = selectedDate)
+            // ── Selected date info panel — fixed at bottom, tappable to go to today ──
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .padding(bottom = 16.dp)
+            ) {
+                SelectedDateCard(
+                    today = today,
+                    onClick = { currentYearMonth = YearMonth.now() }
+                )
+            }
         }
     }
 
-    // ── Year picker dialog ────────────────────────────────────────────────
     if (showYearPicker) {
         YearPickerDialog(
             currentYear = currentYearMonth.year,
@@ -112,7 +126,6 @@ fun CalendarApp() {
         )
     }
 
-    // ── Month picker dialog ───────────────────────────────────────────────
     if (showMonthPicker) {
         MonthPickerDialog(
             currentMonth = currentYearMonth.monthValue,
@@ -141,14 +154,10 @@ fun CalendarHeader(
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
         IconButton(onClick = onPreviousMonth) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = "Previous month"
-            )
+            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Previous month")
         }
 
         Row(verticalAlignment = Alignment.CenterVertically) {
-            // Tappable month name
             Text(
                 text = yearMonth.month.getDisplayName(JavaTextStyle.FULL, Locale.getDefault()),
                 fontSize = 20.sp,
@@ -160,7 +169,6 @@ fun CalendarHeader(
                     .padding(horizontal = 6.dp, vertical = 4.dp)
             )
             Spacer(modifier = Modifier.width(6.dp))
-            // Tappable year
             Text(
                 text = yearMonth.year.toString(),
                 fontSize = 20.sp,
@@ -174,17 +182,14 @@ fun CalendarHeader(
         }
 
         IconButton(onClick = onNextMonth) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                contentDescription = "Next month"
-            )
+            Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Next month")
         }
     }
 }
 
-// ─── Weekday row ─────────────────────────────────────────────────────────────
+// ─── Weekday row — Sat start, Fri end ────────────────────────────────────────
 
-private val WEEKDAYS = listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
+private val WEEKDAYS = listOf("Sat", "Sun", "Mon", "Tue", "Wed", "Thu", "Fri")
 
 @Composable
 fun WeekdayHeader() {
@@ -211,11 +216,14 @@ fun CalendarGrid(
     today: LocalDate,
     onDateSelected: (LocalDate) -> Unit
 ) {
-    // firstDayOfWeek: Sunday=0, Monday=1, …, Saturday=6
-    val firstDayOffset = yearMonth.atDay(1).dayOfWeek.value % 7  // ISO: Mon=1..Sun=7 → Sun=0
+    val isoDay = yearMonth.atDay(1).dayOfWeek.value
+    val firstDayOffset = when (isoDay) {
+        6 -> 0 // Sat
+        7 -> 1 // Sun
+        else -> isoDay + 1 // Mon=2..Fri=6
+    }
     val daysInMonth = yearMonth.lengthOfMonth()
 
-    // Build a list of nullable days (nulls = leading empty cells)
     val cells = buildList<LocalDate?> {
         repeat(firstDayOffset) { add(null) }
         for (day in 1..daysInMonth) add(yearMonth.atDay(day))
@@ -256,10 +264,7 @@ fun DayCell(
             .padding(2.dp)
     ) {
         if (date != null) {
-            val bgColor = when {
-                isSelected -> primaryColor
-                else -> Color.Transparent
-            }
+            val bgColor = if (isSelected) primaryColor else Color.Transparent
             val textColor = when {
                 isSelected -> onPrimary
                 isToday -> primaryColor
@@ -294,9 +299,11 @@ fun DayCell(
 // ─── Selected date info card ──────────────────────────────────────────────────
 
 @Composable
-fun SelectedDateCard(selectedDate: LocalDate) {
+fun SelectedDateCard(today: LocalDate, onClick: () -> Unit) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() },
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.primaryContainer
@@ -309,23 +316,22 @@ fun SelectedDateCard(selectedDate: LocalDate) {
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
-                text = "Selected Date",
+                text = "Today",
                 fontSize = 12.sp,
                 color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
                 fontWeight = FontWeight.Medium
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = selectedDate.dayOfWeek
-                    .getDisplayName(JavaTextStyle.FULL, Locale.getDefault()),
+                text = today.dayOfWeek.getDisplayName(JavaTextStyle.FULL, Locale.getDefault()),
                 fontSize = 16.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onPrimaryContainer
             )
             Text(
-                text = "${selectedDate.dayOfMonth} " +
-                        "${selectedDate.month.getDisplayName(JavaTextStyle.FULL, Locale.getDefault())} " +
-                        "${selectedDate.year}",
+                text = "${today.dayOfMonth} " +
+                        "${today.month.getDisplayName(JavaTextStyle.FULL, Locale.getDefault())} " +
+                        "${today.year}",
                 fontSize = 22.sp,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onPrimaryContainer
@@ -334,7 +340,7 @@ fun SelectedDateCard(selectedDate: LocalDate) {
     }
 }
 
-// ─── Year Picker Dialog ───────────────────────────────────────────────────────
+// ─── Year Picker Dialog — scrollable LazyColumn of 3-col rows ────────────────
 
 @Composable
 fun YearPickerDialog(
@@ -342,7 +348,14 @@ fun YearPickerDialog(
     onYearSelected: (Int) -> Unit,
     onDismiss: () -> Unit
 ) {
-    val years = (1970..2100).toList()
+    val allYears = (1948..2100).toList()
+    val allRows = allYears.chunked(3)
+
+    // Index of the row that contains currentYear
+    val currentRowIndex = allRows.indexOfFirst { row -> row.contains(currentYear) }
+    // Scroll so the current-year row sits in the visible center (offset by ~2 rows)
+    val initialIndex = (currentRowIndex - 2).coerceAtLeast(0)
+    val listState = rememberLazyListState(initialFirstVisibleItemIndex = initialIndex)
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -360,36 +373,51 @@ fun YearPickerDialog(
                     modifier = Modifier.padding(bottom = 12.dp)
                 )
 
-                androidx.compose.foundation.lazy.LazyColumn {
-                    items(years.size) { index ->
-                        val year = years[index]
-                        val isSelected = year == currentYear
-                        Text(
-                            text = year.toString(),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(
-                                    if (isSelected)
-                                        MaterialTheme.colorScheme.primaryContainer
-                                    else Color.Transparent
-                                )
-                                .clickable { onYearSelected(year) }
-                                .padding(vertical = 10.dp, horizontal = 12.dp),
-                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                            color = if (isSelected)
-                                MaterialTheme.colorScheme.onPrimaryContainer
-                            else MaterialTheme.colorScheme.onSurface,
-                            fontSize = 15.sp
-                        )
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(allRows.size) { rowIndex ->
+                        val row = allRows[rowIndex]
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            row.forEach { year ->
+                                val isSelected = year == currentYear
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(
+                                            if (isSelected)
+                                                MaterialTheme.colorScheme.primaryContainer
+                                            else MaterialTheme.colorScheme.surfaceVariant
+                                        )
+                                        .clickable { onYearSelected(year) }
+                                        .padding(vertical = 12.dp)
+                                ) {
+                                    Text(
+                                        text = year.toString(),
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (isSelected)
+                                            MaterialTheme.colorScheme.onPrimaryContainer
+                                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        fontSize = 14.sp
+                                    )
+                                }
+                            }
+                            // Pad incomplete last row
+                            repeat(3 - row.size) {
+                                Spacer(modifier = Modifier.weight(1f))
+                            }
+                        }
                     }
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
-                TextButton(
-                    onClick = onDismiss,
-                    modifier = Modifier.align(Alignment.End)
-                ) { Text("Cancel") }
             }
         }
     }
@@ -417,7 +445,6 @@ fun MonthPickerDialog(
                     modifier = Modifier.padding(bottom = 12.dp)
                 )
 
-                // 3-column grid of month names
                 val months = (1..12).map { m ->
                     Pair(m, java.time.Month.of(m)
                         .getDisplayName(JavaTextStyle.SHORT, Locale.getDefault()))
@@ -456,11 +483,6 @@ fun MonthPickerDialog(
                     }
                     Spacer(modifier = Modifier.height(8.dp))
                 }
-
-                TextButton(
-                    onClick = onDismiss,
-                    modifier = Modifier.align(Alignment.End)
-                ) { Text("Cancel") }
             }
         }
     }
