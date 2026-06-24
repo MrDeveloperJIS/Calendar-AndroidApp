@@ -348,7 +348,7 @@ fun YearPickerDialog(
     onYearSelected: (Int) -> Unit,
     onDismiss: () -> Unit
 ) {
-    val allYears = (1948..2100).toList()
+    val allYears = (1951..2100).toList()
     val allRows = allYears.chunked(3)
 
     // Index of the row that contains currentYear
@@ -363,7 +363,7 @@ fun YearPickerDialog(
             tonalElevation = 6.dp,
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(max = 400.dp)
+                .heightIn(max = 360.dp)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text(
