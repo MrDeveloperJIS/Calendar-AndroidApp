@@ -107,10 +107,10 @@ fun CalendarApp() {
                     transitionSpec = {
                         val dir = slideDirection
                         (slideInHorizontally(
-                            animationSpec = tween(180),
+                            animationSpec = tween(120),
                             initialOffsetX = { fullWidth -> if (dir > 0) fullWidth else -fullWidth }
                         ) togetherWith slideOutHorizontally(
-                            animationSpec = tween(180),
+                            animationSpec = tween(120),
                             targetOffsetX = { fullWidth -> if (dir > 0) -fullWidth else fullWidth }
                         ))
                     },
@@ -195,13 +195,13 @@ fun CalendarHeader(
             transitionSpec = {
                 val dir = slideDirection
                 (slideInHorizontally(
-                    animationSpec = tween(180),
+                    animationSpec = tween(120),
                     initialOffsetX = { fullWidth -> if (dir > 0) fullWidth / 2 else -fullWidth / 2 }
-                ) + fadeIn(tween(180))) togetherWith
+                ) + fadeIn(tween(120))) togetherWith
                         (slideOutHorizontally(
-                            animationSpec = tween(180),
+                            animationSpec = tween(120),
                             targetOffsetX = { fullWidth -> if (dir > 0) -fullWidth / 2 else fullWidth / 2 }
-                        ) + fadeOut(tween(150)))
+                        ) + fadeOut(tween(80)))
             },
             label = "HeaderSlide"
         ) { animatedYearMonth ->
@@ -381,7 +381,7 @@ fun YearPickerDialog(
     onYearSelected: (Int) -> Unit,
     onDismiss: () -> Unit
 ) {
-    val allYears = (1951..2100).toList()
+    val allYears = (1991..2050).toList()
     val allRows = allYears.chunked(3)
     val currentRowIndex = allRows.indexOfFirst { row -> row.contains(currentYear) }
     val initialIndex = (currentRowIndex - 2).coerceAtLeast(0)
