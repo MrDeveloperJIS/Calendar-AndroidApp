@@ -15,8 +15,8 @@ android {
         applicationId = "com.mrjis.calendar"
         minSdk = 35
         targetSdk = 36
-        versionCode = 7
-        versionName = "1.6"
+        versionCode = 8
+        versionName = "1.8"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -27,7 +27,6 @@ android {
                 enable = true
             }
             isShrinkResources = true
-            signingConfig = signingConfigs.getByName("debug")
         }
     }
     compileOptions {

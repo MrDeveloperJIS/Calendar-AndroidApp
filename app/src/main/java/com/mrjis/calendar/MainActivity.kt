@@ -53,6 +53,10 @@ fun CalendarApp() {
     val today = LocalDate.now()
     var currentYearMonth by remember { mutableStateOf(YearMonth.now()) }
     var selectedDate by remember { mutableStateOf(today) }
+
+    // Drives AnimatedContent slide direction.
+    // +1 → next month (new content enters from right)
+    // -1 → prev month (new content enters from left)
     var slideDirection by remember { mutableIntStateOf(1) }
 
     var showYearPicker by remember { mutableStateOf(false) }
@@ -68,6 +72,11 @@ fun CalendarApp() {
         currentYearMonth = currentYearMonth.plusMonths(1)
     }
 
+    // Accumulated horizontal drag distance for the current gesture.
+    // Kept at this level so the entire screen surface — not just the grid —
+    // responds to swipes.
+    var dragAccumulator by remember { mutableFloatStateOf(0f) }
+
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         containerColor = MaterialTheme.colorScheme.background
@@ -76,60 +85,68 @@ fun CalendarApp() {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
+                // Attach gesture to the full-screen Box so whitespace above/below
+                // the grid is also swipeable — not just the grid cells themselves.
+                .pointerInput(Unit) {
+                    detectHorizontalDragGestures(
+                        onDragStart  = { dragAccumulator = 0f },
+                        onDragCancel = { dragAccumulator = 0f },
+                        onHorizontalDrag = { _, delta -> dragAccumulator += delta },
+                        onDragEnd = {
+                            // Positive delta = finger moved right = going back in time
+                            // Negative delta = finger moved left  = going forward in time
+                            when {
+                                dragAccumulator >  60f -> goToPrevious()
+                                dragAccumulator < -60f -> goToNext()
+                            }
+                            dragAccumulator = 0f
+                        }
+                    )
+                }
                 .padding(horizontal = 16.dp)
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .align(Alignment.TopStart)
-                    .padding(bottom = 120.dp)
             ) {
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(16.dp))
 
                 CalendarHeader(
                     yearMonth = currentYearMonth,
                     slideDirection = slideDirection,
                     onMonthClick = { showMonthPicker = true },
-                    onYearClick = { showYearPicker = true }
+                    onYearClick  = { showYearPicker  = true }
                 )
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(16.dp))
 
                 WeekdayHeader()
 
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(6.dp))
 
-                // Swipe gesture on the grid area
-                var dragAccumulator by remember { mutableFloatStateOf(0f) }
+                // Snapshot slideDirection before entering the AnimatedContent lambda.
+                // transitionSpec runs during the animation phase — if we read
+                // slideDirection directly inside it, a subsequent recomposition
+                // (e.g. rapid swipe) can flip the value before the transition
+                // finishes, producing the wrong slide direction.
+                val capturedDirection = slideDirection
 
                 AnimatedContent(
                     targetState = currentYearMonth,
                     transitionSpec = {
-                        val dir = slideDirection
-                        (slideInHorizontally(
-                            animationSpec = tween(120),
-                            initialOffsetX = { fullWidth -> if (dir > 0) fullWidth else -fullWidth }
+                        val dir = capturedDirection
+                        slideInHorizontally(
+                            animationSpec = tween(220),
+                            // Next: enter from right (+fullWidth). Prev: enter from left (-fullWidth).
+                            initialOffsetX = { if (dir > 0) it else -it }
                         ) togetherWith slideOutHorizontally(
-                            animationSpec = tween(120),
-                            targetOffsetX = { fullWidth -> if (dir > 0) -fullWidth else fullWidth }
-                        ))
+                            animationSpec = tween(220),
+                            // Next: exit to left (-fullWidth). Prev: exit to right (+fullWidth).
+                            targetOffsetX = { if (dir > 0) -it else it }
+                        )
                     },
-                    label = "CalendarGridSlide",
-                    modifier = Modifier
-                        .pointerInput(Unit) {
-                            detectHorizontalDragGestures(
-                                onDragStart = { dragAccumulator = 0f },
-                                onDragEnd = {
-                                    if (dragAccumulator > 50f) goToPrevious()
-                                    else if (dragAccumulator < -50f) goToNext()
-                                    dragAccumulator = 0f
-                                },
-                                onDragCancel = { dragAccumulator = 0f },
-                                onHorizontalDrag = { _, dragAmount ->
-                                    dragAccumulator += dragAmount
-                                }
-                            )
-                        }
+                    label = "CalendarGridSlide"
                 ) { animatedYearMonth ->
                     CalendarGrid(
                         yearMonth = animatedYearMonth,
@@ -140,15 +157,22 @@ fun CalendarApp() {
                 }
             }
 
+            // Pinned today card — tapping it resets the calendar to the current month.
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
-                    .padding(bottom = 16.dp)
+                    .padding(bottom = 20.dp)
             ) {
                 TodayDateCard(
                     today = today,
-                    onClick = { currentYearMonth = YearMonth.now() }
+                    onClick = {
+                        val target = YearMonth.now()
+                        if (target != currentYearMonth) {
+                            slideDirection = if (target > currentYearMonth) 1 else -1
+                            currentYearMonth = target
+                        }
+                    }
                 )
             }
         }
@@ -158,7 +182,9 @@ fun CalendarApp() {
         YearPickerDialog(
             currentYear = currentYearMonth.year,
             onYearSelected = { year ->
-                currentYearMonth = YearMonth.of(year, currentYearMonth.month)
+                val target = YearMonth.of(year, currentYearMonth.month)
+                slideDirection = if (target > currentYearMonth) 1 else -1
+                currentYearMonth = target
                 showYearPicker = false
             },
             onDismiss = { showYearPicker = false }
@@ -169,7 +195,9 @@ fun CalendarApp() {
         MonthPickerDialog(
             currentMonth = currentYearMonth.monthValue,
             onMonthSelected = { month ->
-                currentYearMonth = YearMonth.of(currentYearMonth.year, month)
+                val target = YearMonth.of(currentYearMonth.year, month)
+                slideDirection = if (target > currentYearMonth) 1 else -1
+                currentYearMonth = target
                 showMonthPicker = false
             },
             onDismiss = { showMonthPicker = false }
@@ -177,7 +205,7 @@ fun CalendarApp() {
     }
 }
 
-// ─── Header row (no nav buttons) ─────────────────────────────────────────────
+// ─── Calendar header ──────────────────────────────────────────────────────────
 
 @Composable
 fun CalendarHeader(
@@ -186,6 +214,9 @@ fun CalendarHeader(
     onMonthClick: () -> Unit,
     onYearClick: () -> Unit
 ) {
+    // Same direction-capture reasoning as CalendarApp — snapshot before the lambda.
+    val capturedDirection = slideDirection
+
     Box(
         modifier = Modifier.fillMaxWidth(),
         contentAlignment = Alignment.Center
@@ -193,47 +224,48 @@ fun CalendarHeader(
         AnimatedContent(
             targetState = yearMonth,
             transitionSpec = {
-                val dir = slideDirection
+                val dir = capturedDirection
                 (slideInHorizontally(
-                    animationSpec = tween(120),
-                    initialOffsetX = { fullWidth -> if (dir > 0) fullWidth / 2 else -fullWidth / 2 }
-                ) + fadeIn(tween(120))) togetherWith
+                    animationSpec = tween(220),
+                    initialOffsetX = { if (dir > 0) it / 2 else -it / 2 }
+                ) + fadeIn(tween(180))) togetherWith
                         (slideOutHorizontally(
-                            animationSpec = tween(120),
-                            targetOffsetX = { fullWidth -> if (dir > 0) -fullWidth / 2 else fullWidth / 2 }
-                        ) + fadeOut(tween(80)))
+                            animationSpec = tween(220),
+                            targetOffsetX = { if (dir > 0) -it / 2 else it / 2 }
+                        ) + fadeOut(tween(120)))
             },
             label = "HeaderSlide"
-        ) { animatedYearMonth ->
+        ) { ym ->
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = animatedYearMonth.month.getDisplayName(JavaTextStyle.FULL, Locale.getDefault()),
-                    fontSize = 20.sp,
+                    text = ym.month.getDisplayName(JavaTextStyle.FULL, Locale.getDefault()),
+                    fontSize = 22.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier
                         .clip(RoundedCornerShape(6.dp))
                         .clickable { onMonthClick() }
-                        .padding(horizontal = 6.dp, vertical = 4.dp)
+                        .padding(horizontal = 8.dp, vertical = 6.dp)
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                    text = animatedYearMonth.year.toString(),
-                    fontSize = 20.sp,
+                    text = ym.year.toString(),
+                    fontSize = 22.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier
                         .clip(RoundedCornerShape(6.dp))
                         .clickable { onYearClick() }
-                        .padding(horizontal = 6.dp, vertical = 4.dp)
+                        .padding(horizontal = 8.dp, vertical = 6.dp)
                 )
             }
         }
     }
 }
 
-// ─── Weekday row ─────────────────────────────────────────────────────────────
+// ─── Weekday label row ────────────────────────────────────────────────────────
 
+// Week starts on Saturday to match the locale convention used in this app.
 private val WEEKDAYS = listOf("Sat", "Sun", "Mon", "Tue", "Wed", "Thu", "Fri")
 
 @Composable
@@ -252,7 +284,7 @@ fun WeekdayHeader() {
     }
 }
 
-// ─── Day grid ────────────────────────────────────────────────────────────────
+// ─── Day grid ─────────────────────────────────────────────────────────────────
 
 @Composable
 fun CalendarGrid(
@@ -261,17 +293,18 @@ fun CalendarGrid(
     today: LocalDate,
     onDateSelected: (LocalDate) -> Unit
 ) {
+    // ISO day-of-week: Mon=1 … Sat=6, Sun=7.
+    // Convert to our Sat-first column offset (Sat→0, Sun→1, Mon→2, …).
     val isoDay = yearMonth.atDay(1).dayOfWeek.value
     val firstDayOffset = when (isoDay) {
-        6 -> 0
-        7 -> 1
-        else -> isoDay + 1
+        6    -> 0           // Saturday
+        7    -> 1           // Sunday
+        else -> isoDay + 1  // Mon–Fri
     }
-    val daysInMonth = yearMonth.lengthOfMonth()
 
     val cells = buildList<LocalDate?> {
-        repeat(firstDayOffset) { add(null) }
-        for (day in 1..daysInMonth) add(yearMonth.atDay(day))
+        repeat(firstDayOffset) { add(null) } // leading empty cells
+        for (day in 1..yearMonth.lengthOfMonth()) add(yearMonth.atDay(day))
     }
 
     LazyVerticalGrid(
@@ -300,64 +333,69 @@ fun DayCell(
     onDateSelected: (LocalDate) -> Unit
 ) {
     val primaryColor = MaterialTheme.colorScheme.primary
-    val onPrimary = MaterialTheme.colorScheme.onPrimary
+    val onPrimary    = MaterialTheme.colorScheme.onPrimary
 
+    // Outer Box maintains the 1:1 aspect ratio for every grid cell,
+    // including the null leading-offset cells.
     Box(
         contentAlignment = Alignment.Center,
         modifier = Modifier
             .aspectRatio(1f)
             .padding(2.dp)
     ) {
-        if (date != null) {
-            val bgColor = if (isSelected) primaryColor else Color.Transparent
-            val textColor = when {
-                isSelected -> onPrimary
-                isToday -> primaryColor
-                else -> MaterialTheme.colorScheme.onBackground
-            }
+        if (date == null) return@Box // empty leading cell — render nothing
 
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clip(CircleShape)
-                    .background(bgColor)
-                    .then(
-                        if (isToday && !isSelected)
-                            Modifier.border(1.5.dp, primaryColor, CircleShape)
-                        else Modifier
-                    )
-                    .clickable { onDateSelected(date) }
-            ) {
-                Text(
-                    text = date.dayOfMonth.toString(),
-                    fontSize = 14.sp,
-                    fontWeight = if (isToday || isSelected) FontWeight.Bold else FontWeight.Normal,
-                    color = textColor,
-                    textAlign = TextAlign.Center
+        val bgColor = if (isSelected) primaryColor else Color.Transparent
+        val textColor = when {
+            isSelected -> onPrimary
+            isToday    -> primaryColor
+            else       -> MaterialTheme.colorScheme.onBackground
+        }
+
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .fillMaxSize()
+                .clip(CircleShape)
+                .background(bgColor)
+                // Today indicator: outline ring when not selected
+                .then(
+                    if (isToday && !isSelected)
+                        Modifier.border(1.5.dp, primaryColor, CircleShape)
+                    else Modifier
                 )
-            }
+                .clickable { onDateSelected(date) }
+        ) {
+            Text(
+                text = date.dayOfMonth.toString(),
+                fontSize = 14.sp,
+                fontWeight = if (isToday || isSelected) FontWeight.Bold else FontWeight.Normal,
+                color = textColor,
+                textAlign = TextAlign.Center
+            )
         }
     }
 }
 
-// ─── Today date info card ──────────────────────────────────────────────────
+// ─── Today card ───────────────────────────────────────────────────────────────
 
+// Displays the full date string for today and acts as a "jump to today" button.
 @Composable
 fun TodayDateCard(today: LocalDate, onClick: () -> Unit) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onClick() },
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.primaryContainer
-        )
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(vertical = 18.dp, horizontal = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
@@ -373,7 +411,7 @@ fun TodayDateCard(today: LocalDate, onClick: () -> Unit) {
     }
 }
 
-// ─── Year Picker Dialog ───────────────────────────────────────────────────────
+// ─── Year picker dialog ───────────────────────────────────────────────────────
 
 @Composable
 fun YearPickerDialog(
@@ -382,10 +420,13 @@ fun YearPickerDialog(
     onDismiss: () -> Unit
 ) {
     val allYears = (1991..2050).toList()
-    val allRows = allYears.chunked(3)
-    val currentRowIndex = allRows.indexOfFirst { row -> row.contains(currentYear) }
-    val initialIndex = (currentRowIndex - 2).coerceAtLeast(0)
-    val listState = rememberLazyListState(initialFirstVisibleItemIndex = initialIndex)
+    val allRows  = allYears.chunked(3)
+
+    // Scroll so the current year is roughly centred rather than at the top.
+    val currentRowIndex = allRows.indexOfFirst { it.contains(currentYear) }
+    val listState = rememberLazyListState(
+        initialFirstVisibleItemIndex = (currentRowIndex - 2).coerceAtLeast(0)
+    )
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -436,6 +477,7 @@ fun YearPickerDialog(
                                     )
                                 }
                             }
+                            // Fill trailing slots when the last row has fewer than 3 years.
                             repeat(3 - row.size) { Spacer(modifier = Modifier.weight(1f)) }
                         }
                     }
@@ -446,7 +488,7 @@ fun YearPickerDialog(
     }
 }
 
-// ─── Month Picker Dialog ──────────────────────────────────────────────────────
+// ─── Month picker dialog ──────────────────────────────────────────────────────
 
 @Composable
 fun MonthPickerDialog(
@@ -467,9 +509,11 @@ fun MonthPickerDialog(
                     fontSize = 18.sp,
                     modifier = Modifier.padding(bottom = 12.dp)
                 )
+
                 val months = (1..12).map { m ->
-                    Pair(m, java.time.Month.of(m).getDisplayName(JavaTextStyle.SHORT, Locale.getDefault()))
+                    m to java.time.Month.of(m).getDisplayName(JavaTextStyle.SHORT, Locale.getDefault())
                 }
+
                 months.chunked(3).forEach { row ->
                     Row(
                         modifier = Modifier.fillMaxWidth(),
